@@ -254,14 +254,14 @@ void emergency_enter(aircraft_info *ai)
 
    pthread_mutex_lock(&runway_mutex);
   
-  // REQUIREMENT 1: Wait if runway is at capacity (2 aircraft)
+ 
   while (aircraft_on_runway >= MAX_RUNWAY_CAPACITY) {
     printf("EMERGENCY aircraft %d waiting - runway at capacity (%d/%d)\n", 
            ai->aircraft_id, aircraft_on_runway, MAX_RUNWAY_CAPACITY);
     pthread_cond_wait(&runway_available, &runway_mutex);
   }
   
-  // Enter the runway
+
   aircraft_on_runway = aircraft_on_runway + 1;
   aircraft_since_break = aircraft_since_break + 1;
   emergency_on_runway = emergency_on_runway + 1;
@@ -295,7 +295,6 @@ static void commercial_leave()
   
   printf("Commercial aircraft left. Aircraft on runway: %d\n", aircraft_on_runway);
   
-  // REQUIREMENT 1: Signal waiting aircraft that space is available
   pthread_cond_signal(&runway_available);
   
   pthread_mutex_unlock(&runway_mutex);
@@ -314,7 +313,6 @@ static void cargo_leave()
   
   printf("Cargo aircraft left. Aircraft on runway: %d\n", aircraft_on_runway);
   
-  // REQUIREMENT 1: Signal waiting aircraft that space is available
   pthread_cond_signal(&runway_available);
   
   pthread_mutex_unlock(&runway_mutex);
@@ -332,9 +330,7 @@ static void emergency_leave()
   emergency_on_runway = emergency_on_runway - 1;
   
   printf("EMERGENCY aircraft left. Aircraft on runway: %d\n", aircraft_on_runway);
-  
-  // REQUIREMENT 1: Signal waiting aircraft that space is available
-  pthread_cond_signal(&runway_available);
+    pthread_cond_signal(&runway_available);
   
   pthread_mutex_unlock(&runway_mutex);
 }
