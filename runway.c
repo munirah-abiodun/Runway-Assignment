@@ -53,6 +53,8 @@
  * you are responsible for maintaining the integrity of these variables in the 
  * code that you develop. 
  */
+pthread_mutex_t runway_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t runway_available = PTHREAD_COND_INITIALIZER;
 
 static int aircraft_on_runway = 0;       /* Total number of aircraft currently on runway */
 static int commercial_on_runway = 0;     /* Total number of commercial aircraft on runway */
@@ -192,20 +194,25 @@ void *controller_thread(void *arg)
  */
 void commercial_enter(aircraft_info *arg) 
 {
-  // Suppress the compiler warning
-  (void)arg;
+   (void)arg;
 
-  /* TODO */
-  /* Request permission to use the runway. You might also want to add      */
-  /* synchronization for the simulation variables below.                   */
-  /* Consider: runway capacity, direction (commercial prefer NORTH),       */
-  /* controller breaks, fuel levels, emergency priorities, and fairness.   */
-  /*  YOUR CODE HERE.                                                      */ 
-
-  aircraft_on_runway    = aircraft_on_runway + 1;
-  aircraft_since_break  = aircraft_since_break + 1;
-  commercial_on_runway  = commercial_on_runway + 1;
+  pthread_mutex_lock(&runway_mutex);
+ 
+  while (aircraft_on_runway >= MAX_RUNWAY_CAPACITY) {
+    printf("Commercial aircraft %d waiting - runway at capacity (%d/%d)\n", 
+           arg->aircraft_id, aircraft_on_runway, MAX_RUNWAY_CAPACITY);
+    pthread_cond_wait(&runway_available, &runway_mutex);
+  }
+  aircraft_on_runway = aircraft_on_runway + 1;
+  aircraft_since_break = aircraft_since_break + 1;
+  commercial_on_runway = commercial_on_runway + 1;
   consecutive_direction = consecutive_direction + 1;
+  
+  printf("Commercial aircraft %d entered runway. Aircraft on runway: %d\n", 
+         arg->aircraft_id, aircraft_on_runway);
+  
+  pthread_mutex_unlock(&runway_mutex);
+
 }
 
 /* Code executed by a cargo aircraft to enter the runway.
@@ -215,18 +222,20 @@ void commercial_enter(aircraft_info *arg)
 void cargo_enter(aircraft_info *ai) 
 {
   (void)ai;
-
-  /* TODO */
-  /* Request permission to use the runway. You might also want to add      */
-  /* synchronization for the simulation variables below.                   */
-  /* Consider: runway capacity, direction (cargo prefer SOUTH),            */
-  /* controller breaks, fuel levels, emergency priorities, and fairness.   */
-  /*  YOUR CODE HERE.                                                      */ 
-
-  aircraft_on_runway    = aircraft_on_runway + 1;
-  aircraft_since_break  = aircraft_since_break + 1;
-  cargo_on_runway       = cargo_on_runway + 1;
+pthread_mutex_lock(&runway_mutex);
+ 
+  while (aircraft_on_runway >= MAX_RUNWAY_CAPACITY) {
+    printf("Cargo aircraft %d waiting - runway at capacity (%d/%d)\n", 
+           ai->aircraft_id, aircraft_on_runway, MAX_RUNWAY_CAPACITY);
+    pthread_cond_wait(&runway_available, &runway_mutex);
+  }
+  aircraft_on_runway = aircraft_on_runway + 1;
+  aircraft_since_break = aircraft_since_break + 1;
+  cargo_on_runway = cargo_on_runway + 1;
   consecutive_direction = consecutive_direction + 1;
+  
+  printf("Cargo aircraft %d entered runway. Aircraft on runway: %d\n", 
+         ai->aircraft_id, aircraft_on_runway);
 }
 
 /* Code executed by an emergency aircraft to enter the runway.
@@ -237,18 +246,25 @@ void emergency_enter(aircraft_info *ai)
 {
   (void)ai;
 
-  /* TODO */
-  /* Request permission to use the runway. You might also want to add      */
-  /* synchronization for the simulation variables below.                   */
-  /* Emergency aircraft have priority and must be admitted within 30s,     */
-  /* but still respect runway capacity and controller breaks.              */
-  /* Emergency aircraft can use either direction.                          */
-  /*  YOUR CODE HERE.                                                      */ 
-
+  pthread_mutex_lock(&runway_mutex);
+  
+  // REQUIREMENT 1: Wait if runway is at capacity (2 aircraft)
+  while (aircraft_on_runway >= MAX_RUNWAY_CAPACITY) {
+    printf("EMERGENCY aircraft %d waiting - runway at capacity (%d/%d)\n", 
+           ai->aircraft_id, aircraft_on_runway, MAX_RUNWAY_CAPACITY);
+    pthread_cond_wait(&runway_available, &runway_mutex);
+  }
+  
+  // Enter the runway
   aircraft_on_runway = aircraft_on_runway + 1;
   aircraft_since_break = aircraft_since_break + 1;
   emergency_on_runway = emergency_on_runway + 1;
   consecutive_direction = consecutive_direction + 1;
+  
+  printf("EMERGENCY aircraft %d entered runway. Aircraft on runway: %d\n", 
+         ai->aircraft_id, aircraft_on_runway);
+  
+  pthread_mutex_unlock(&runway_mutex);
 }
 
 /* Code executed by an aircraft to simulate the time spent on the runway
@@ -266,13 +282,15 @@ static void use_runway(int t)
  */
 static void commercial_leave() 
 {
-  /* 
-   *  TODO
-   *  YOUR CODE HERE. 
-   */
-
+  pthread_mutex_lock(&runway_mutex);
+  
   aircraft_on_runway = aircraft_on_runway - 1;
   commercial_on_runway = commercial_on_runway - 1;
+  
+  printf("Commercial aircraft left. Aircraft on runway: %d\n", aircraft_on_runway);
+  pthread_cond_signal(&runway_available);
+  
+  pthread_mutex_unlock(&runway_mutex);
 }
 
 /* Code executed by a cargo aircraft when leaving the runway.
@@ -281,13 +299,16 @@ static void commercial_leave()
  */
 static void cargo_leave() 
 {
-  /* 
-   * TODO
-   * YOUR CODE HERE. 
-   */
-
+  pthread_mutex_lock(&runway_mutex);
+  
   aircraft_on_runway = aircraft_on_runway - 1;
   cargo_on_runway = cargo_on_runway - 1;
+  
+  printf("Cargo aircraft left. Aircraft on runway: %d\n", aircraft_on_runway);
+  
+  pthread_cond_signal(&runway_available);
+  
+  pthread_mutex_unlock(&runway_mutex);
 }
 
 /* Code executed by an emergency aircraft when leaving the runway.
@@ -296,13 +317,17 @@ static void cargo_leave()
  */
 static void emergency_leave() 
 {
-  /* 
-   * TODO
-   * YOUR CODE HERE. 
-   */
-
+  pthread_mutex_lock(&runway_mutex);
+  
   aircraft_on_runway = aircraft_on_runway - 1;
   emergency_on_runway = emergency_on_runway - 1;
+  
+  printf("EMERGENCY aircraft left. Aircraft on runway: %d\n", aircraft_on_runway);
+  
+  // REQUIREMENT 1: Signal waiting aircraft that space is available
+  pthread_cond_signal(&runway_available);
+  
+  pthread_mutex_unlock(&runway_mutex);
 }
 
 /* Main code for commercial aircraft threads.  
